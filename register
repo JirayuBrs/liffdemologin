@@ -1,0 +1,227 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ระบบยืนยันตัวตนพนักงาน</title>
+    <!-- นำเข้า LINE LIFF SDK -->
+    <script src="https://line.me"></script>
+    <style>
+        body {
+            font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif;
+            background-color: #f4f7f6;
+            margin: 0;
+            padding: 20px;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+        }
+        .container {
+            background-color: #ffffff;
+            padding: 30px;
+            border-radius: 12px;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.1);
+            width: 100%;
+            max-width: 400px;
+            box-sizing: border-box;
+        }
+        h2 {
+            text-align: center;
+            color: #333333;
+            margin-bottom: 8px;
+        }
+        p.subtitle {
+            text-align: center;
+            color: #666666;
+            font-size: 13px;
+            margin-bottom: 24px;
+        }
+        .form-group {
+            margin-bottom: 18px;
+        }
+        label {
+            display: block;
+            margin-bottom: 6px;
+            color: #444444;
+            font-size: 14px;
+            font-weight: 500;
+        }
+        input {
+            width: 100%;
+            padding: 12px;
+            border: 1px solid #cccccc;
+            border-radius: 6px;
+            box-sizing: border-box;
+            font-size: 16px;
+        }
+        input:disabled {
+            background-color: #e9ecef;
+            color: #6c757d;
+        }
+        input:focus {
+            border-color: #06C755;
+            outline: none;
+        }
+        button {
+            width: 100%;
+            padding: 14px;
+            background-color: #06C755; /* สีเขียว LINE */
+            color: white;
+            border: none;
+            border-radius: 6px;
+            font-size: 16px;
+            font-weight: bold;
+            cursor: pointer;
+            transition: background-color 0.3s;
+            margin-top: 10px;
+        }
+        button:hover {
+            background-color: #05b04b;
+        }
+        button:disabled {
+            background-color: #cccccc;
+            cursor: not-allowed;
+        }
+        #statusMessage {
+            margin-top: 15px;
+            text-align: center;
+            font-size: 14px;
+            font-weight: bold;
+        }
+        .loading { color: #ff9800; }
+        .success { color: #4caf50; }
+        .error { color: #f44336; }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <h2>ยืนยันข้อมูลพนักงาน</h2>
+    <p class="subtitle">กรุณากรอกข้อมูลให้ตรงกับฐานข้อมูลของฝ่ายบุคคล</p>
+    
+    <form id="verifyForm">
+        <!-- ล็อกค่า LINE User ID ไว้แสดงผล -->
+        <div class="form-group">
+            <label for="lineUserId">LINE User ID ของคุณ</label>
+            <input type="text" id="lineUserId" disabled placeholder="กำลังโหลดข้อมูลจาก LINE...">
+        </div>
+        
+        <!-- ช่องที่ 1: รหัสพนักงาน -->
+        <div class="form-group">
+            <label for="employeeId">รหัสพนักงาน</label>
+            <input type="text" id="employeeId" required placeholder="ตัวอย่าง: EM1234" autocomplete="off">
+        </div>
+
+        <!-- ช่องที่ 2: เลขท้ายบัตรประชาชน 4 ตัว (ล็อกให้พิมพ์เฉพาะตัวเลขและจำกัด 4 ตัว) -->
+        <div class="form-group">
+            <label for="idCardLast4">เลขท้าย 4 ตัวของบัตรประชาชน</label>
+            <input type="text" id="idCardLast4" required pattern="\d{4}" maxlength="4" placeholder="กรอกเฉพาะตัวเลข 4 หลัก" autocomplete="off" inputmode="numeric">
+        </div>
+
+        <!-- ช่องที่ 3: ปี พ.ศ. เกิด (ล็อกให้พิมพ์เฉพาะตัวเลขและจำกัด 4 ตัว) -->
+        <div class="form-group">
+            <label for="birthYearTh">ปี พ.ศ. เกิด</label>
+            <input type="text" id="birthYearTh" required pattern="\d{4}" maxlength="4" placeholder="ตัวอย่าง: 2535" autocomplete="off" inputmode="numeric">
+        </div>
+        
+        <button type="submit" id="submitBtn" disabled>ส่งข้อมูลยืนยันตัวตน</button>
+    </form>
+    
+    <div id="statusMessage"></div>
+</div>
+
+<script>
+    // ⚙️ ตั้งค่าระบบ (กรอกข้อมูลของคุณที่นี่)
+    const LIFF_ID = "ใส่_LIFF_ID_ของคุณที่นี่"; 
+    const POWER_AUTOMATE_URL = "ใส่_URL_HTTP_POST_ของ_Power_Automate_ที่นี่";
+
+    // 1. เริ่มการทำงานของ LINE LIFF
+    async function initLiff() {
+        try {
+            await liff.init({ liffId: LIFF_ID });
+            if (liff.isLoggedIn()) {
+                const profile = await liff.getProfile();
+                document.getElementById('lineUserId').value = profile.userId;
+                document.getElementById('submitBtn').disabled = false;
+            } else {
+                liff.login();
+            }
+        } catch (error) {
+            console.error("LIFF Initialization failed", error);
+            showStatus("เกิดข้อผิดพลาดในการเชื่อมต่อกับ LINE", "error");
+        }
+    }
+
+    // สคริปต์ช่วยล็อกให้ช่องกรอกตัวเลขพิมพ์ได้เฉพาะตัวเลขเท่านั้น
+    const numericInputs = ['idCardLast4', 'birthYearTh'];
+    numericInputs.forEach(id => {
+        document.getElementById(id).addEventListener('input', function (e) {
+            this.value = this.value.replace(/[^0-9]/g, '');
+        });
+    });
+
+    // 2. จัดการเมื่อกดปุ่มส่งข้อมูล
+    document.getElementById('verifyForm').addEventListener('submit', async function(e) {
+        e.preventDefault();
+        
+        const lineUserId = document.getElementById('lineUserId').value;
+        const employeeId = document.getElementById('employeeId').value;
+        const idCardLast4 = document.getElementById('idCardLast4').value;
+        const birthYearTh = document.getElementById('birthYearTh').value;
+        const submitBtn = document.getElementById('submitBtn');
+        
+        // ตรวจสอบความสมบูรณ์ของข้อมูลอีกครั้ง
+        if (!lineUserId || !employeeId || idCardLast4.length !== 4 || birthYearTh.length !== 4) {
+            showStatus("กรุณากรอกข้อมูลให้ถูกต้องและครบถ้วน", "error");
+            return;
+        }
+
+        submitBtn.disabled = true;
+        showStatus("กำลังตรวจสอบข้อมูล...", "loading");
+
+        // มัดรวมข้อมูลส่งในรูปแบบ JSON
+        const payload = {
+            lineUserId: lineUserId,
+            employeeId: employeeId,
+            idCardLast4: idCardLast4,
+            birthYearTh: birthYearTh
+        };
+
+        try {
+            const response = await fetch(POWER_AUTOMATE_URL, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify(payload)
+            });
+
+            if (response.ok) {
+                showStatus("ยืนยันตัวตนสำเร็จ! ระบบกำลังพาท่านกลับสู่ LINE", "success");
+                setTimeout(() => {
+                    liff.closeWindow();
+                }, 2000);
+            } else {
+                // คุณสามารถตั้งให้ฝั่ง Power Automate ส่ง Status 400 กลับมาหากข้อมูลไม่ตรง
+                showStatus("ข้อมูลไม่ถูกต้อง หรือระบบหลังบ้านขัดข้อง", "error");
+                submitBtn.disabled = false;
+            }
+        } catch (error) {
+            console.error("Error sending data", error);
+            showStatus("ไม่สามารถเชื่อมต่อเซิร์ฟเวอร์ได้", "error");
+            submitBtn.disabled = false;
+        }
+    });
+
+    function showStatus(text, className) {
+        const msgDiv = document.getElementById('statusMessage');
+        msgDiv.innerText = text;
+        msgDiv.className = className;
+    }
+
+    window.onload = initLiff;
+</script>
+
+</body>
+</html>
